@@ -1,5 +1,5 @@
 // MENTIS — service worker: la app funciona sin internet
-const VERSION = 'mentis-v0.2.1';
+const VERSION = 'mentis-v0.2.4';
 const ARCHIVOS = [
   './', 'index.html', 'manifest.webmanifest', 'styles.css',
   'app.js', 'store.js', 'engine.js', 'generadores.js', 'ia.js', 'voz.js',

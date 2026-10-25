@@ -88,7 +88,7 @@ function render() {
   aplicarTema();
   if (!S().perfil) return vistaBienvenida();
   const [ruta, arg] = (location.hash.slice(1) || 'inicio').split('/');
-  const vistas = { inicio: vistaInicio, clase: vistaClase, estudiar: vistaEstudiar, practica: () => vistaPractica(arg), nivel: () => vistaNivel(arg), voz: vistaVoz, libros: vistaLibros, perfil: vistaPerfil, misiones: vistaMisiones, logros: vistaLogros, ajustes: vistaAjustes };
+  const vistas = { inicio: vistaInicio, clase: vistaClase, estudiar: vistaEstudiar, practica: () => vistaPractica(arg), nivel: () => vistaNivel(arg), voz: vistaVoz, concurso: vistaConcurso, libros: vistaLibros, perfil: vistaPerfil, misiones: vistaMisiones, logros: vistaLogros, ajustes: vistaAjustes };
   try { (vistas[ruta] || vistaInicio)(); }
   catch (err) {
     console.error(err);
@@ -104,13 +104,43 @@ addEventListener('hashchange', render);
 const ir = h => { if (location.hash === '#' + h) render(); else location.hash = h; };
 document.addEventListener('click', e => { const a = e.target.closest('a[href^="#"]'); if (a && a.getAttribute('href') === location.hash) { e.preventDefault(); render(); } });
 
+/* ================= Voz: entender la respuesta hablada ================= */
+const ORDINALES = [['primera', 'primero', 'uno', 'la a', 'a'], ['segunda', 'segundo', 'dos', 'la b', 'b', 'be'], ['tercera', 'tercero', 'tres', 'la c', 'c', 'ce'], ['cuarta', 'cuarto', 'cuatro', 'la d', 'd', 'de']];
+function interpretarVoz(p, alts) {
+  if (p.tipo === 'num') { for (const a of alts) { const n = V.aNumero(a); if (n != null) return String(n); } return null; }
+  if (p.tipo === 'texto') return alts.find(a => G.esCorrecta(p, a)) || alts[0] || null;
+  for (const a of alts) {
+    const x = G.normalizar(a);
+    const hit = p.opciones.find(o => G.textoCorrecto(a, [o]) || (x.length >= 3 && G.normalizar(o).includes(x)) || (G.normalizar(o).length >= 3 && x.includes(G.normalizar(o))));
+    if (hit) return hit;
+    const k = ORDINALES.findIndex(ws => ws.some(w => x === w || x === 'la ' + w || x === 'opcion ' + w || x === 'el ' + w));
+    if (k >= 0 && p.opciones[k]) return p.opciones[k];
+  }
+  return null;
+}
+async function escucharPara(boton, p, alEntender) {
+  const txt = boton.innerHTML; boton.disabled = true; boton.innerHTML = '🎙️ Te escucho…'; boton.classList.add('escuchando');
+  try {
+    const alts = await V.escuchar();
+    const r = interpretarVoz(p, alts);
+    if (r == null) { boton.innerHTML = `No entendí “${esc(alts[0])}”. Toca para intentar otra vez`; }
+    else { alEntender(r, alts[0]); return; }
+  } catch (e) { boton.innerHTML = esc(e.message) + ' Toca para intentar otra vez'; }
+  boton.disabled = false; boton.classList.remove('escuchando');
+  setTimeout(() => { if (boton.isConnected && !boton.disabled) boton.innerHTML = txt; }, 3500);
+}
+
 /* =====================================================================
    Corredor de preguntas (lo usan la clase, la práctica y los exámenes)
    ===================================================================== */
-function correr({ preguntas, titulo, salir, inicio = 0, alAvanzar, alTerminar, examen = false }) {
-  let i = inicio, entrada = '', t0 = performance.now(), resultados = [], xpTotal = 0, bloqueado = false;
+function correr({ preguntas, titulo, salir, inicio = 0, previo = null, alAvanzar, alTerminar, examen = false }) {
+  const ant = previo || { total: 0, correctas: 0, xp: 0 };
+  let i = Math.min(inicio, preguntas.length), entrada = '', t0 = performance.now(), resultados = [], xpTotal = ant.xp, bloqueado = false;
+  const acum = () => ({ total: ant.total + resultados.length, correctas: ant.correctas + resultados.filter(Boolean).length, xp: xpTotal });
+  // si ya se contestó todo (salió en la última retroalimentación), se termina con lo guardado
+  if (i >= preguntas.length) return alTerminar(acum());
   app.innerHTML = `<div class="vista">
-    <div class="fila entre"><a href="${salir}" class="suave" style="text-decoration:none">✕ Salir</a><span class="peq suave">${esc(titulo)}</span><span class="chip lavanda" id="xpS">+0 XP</span></div>
+    <div class="fila entre"><a href="${salir}" class="suave" style="text-decoration:none">✕ Salir</a><span class="peq suave">${esc(titulo)}</span><span class="chip lavanda" id="xpS">+${ant.xp} XP</span></div>
     <div class="card ejercicio" id="ej"></div></div>`;
   const ej = $('#ej');
   const pinta = () => {
@@ -121,7 +151,9 @@ function correr({ preguntas, titulo, salir, inicio = 0, alAvanzar, alTerminar, e
       <div class="peq suave" style="margin-top:12px">${m ? m.icono + ' ' : ''}${esc(p.categoria || p.nombre || '')}</div>
       <div class="pregunta ${p.enunciado.length > 28 ? 'larga' : ''}">${esc(p.enunciado)}</div>
       ${p.lectura ? `<button class="btn chico sec" id="leer" style="margin:2px auto 8px">🔈 ¿Cómo se lee?</button><div id="lectura" class="lectura" hidden>Se lee: <b>${esc(p.lectura)}</b></div>` : ''}
-      <div id="zona"></div><div id="fb"></div>`;
+      <div id="zona"></div>
+      ${V.puedeEscuchar() ? '<button class="btn chico sec mic" id="mic">🎙️ Responder con voz</button>' : ''}
+      <div id="oiste" class="peq suave"></div><div id="fb"></div>`;
     if (p.lectura) $('#leer').onclick = () => { $('#lectura').hidden = false; V.hablar(p.lectura); };
     const zona = $('#zona');
     if (p.tipo === 'num') {
@@ -142,6 +174,15 @@ function correr({ preguntas, titulo, salir, inicio = 0, alAvanzar, alTerminar, e
       txt.onkeydown = e => { if (e.key === 'Enter' && txt.value.trim()) responder(txt.value); };
       if (p.pista) $('#pista').onclick = e => { e.target.outerHTML = `<p class="peq suave">Pista: ${esc(p.pista)}</p>`; };
     }
+    if ($('#mic')) $('#mic').onclick = e => escucharPara(e.currentTarget, p, (r, oido) => {
+      if (bloqueado) return;
+      $('#oiste').textContent = `Escuché: “${oido}”`;
+      if (p.tipo === 'num') { entrada = r; $('#resp').textContent = r.replace('-', '−'); }
+      if (p.tipo === 'texto') $('#txt').value = r;
+      const b = p.tipo === 'opc' ? [...ej.querySelectorAll('.opciones button')].find(x => x.textContent === r) : null;
+      $('#mic').remove();
+      responder(r, b, true);
+    });
   };
   const tecla = k => {
     if (bloqueado) return;
@@ -159,15 +200,16 @@ function correr({ preguntas, titulo, salir, inicio = 0, alAvanzar, alTerminar, e
   addEventListener('keydown', teclado);
   limpiar = () => removeEventListener('keydown', teclado);
 
-  function responder(resp, boton) {
+  function responder(resp, boton, porVoz = false) {
     if (bloqueado) return; bloqueado = true;
     const p = preguntas[i];
     const ok = G.esCorrecta(p, resp);
     const seg = (performance.now() - t0) / 1000;
     let res = { xp: 0, motivos: [] };
-    if (p.materia !== 'lib') res = E.registrarIntento({ materia: p.materia, id: p.id, nombre: p.nombre, ok, segundos: seg, texto: p.tipo === 'texto' });
+    if (p.materia !== 'lib') res = E.registrarIntento({ materia: p.materia, id: p.id, nombre: p.nombre, ok, segundos: seg, texto: p.tipo === 'texto', voz: porVoz });
     resultados.push(ok); xpTotal += res.xp;
     $('#xpS').textContent = `+${xpTotal} XP`;
+    if ($('#mic')) $('#mic').remove();
     if (p.tipo === 'num') $('#resp').classList.add(ok ? 'ok' : 'mal');
     if (p.tipo === 'opc') ej.querySelectorAll('.opciones button').forEach(b => { if (b.textContent === p.a) b.classList.add('ok'); else if (b === boton) b.classList.add('mal'); b.disabled = true; });
     if (res.xp) flotante(`+${res.xp} XP`);
@@ -186,12 +228,11 @@ function correr({ preguntas, titulo, salir, inicio = 0, alAvanzar, alTerminar, e
     };
     $('#fb').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     avisosPendientes();
-    alAvanzar?.(i + 1);
-    const seguir = () => { i++; if (i >= preguntas.length) { limpiar?.(); limpiar = null; alTerminar({ total: resultados.length, correctas: resultados.filter(Boolean).length, xp: xpTotal }); } else pinta(); };
+    alAvanzar?.(i + 1, acum());
+    const seguir = () => { i++; if (i >= preguntas.length) { limpiar?.(); limpiar = null; alTerminar(acum()); } else pinta(); };
     $('#sig').onclick = seguir;
     if (ok && !detalle && p.tipo !== 'texto') setTimeout(() => { if ($('#sig') && preguntas[i] === p) seguir(); }, 800);
   }
-  if (!preguntas.length) return alTerminar({ total: 0, correctas: 0, xp: 0 });
   pinta();
 }
 
@@ -396,12 +437,12 @@ function vistaClase() {
     <div class="barra" style="margin-bottom:14px"><i data-w="${c.idx / c.pasos.length * 100}%"></i></div>`;
 
   if (paso.tipo === 'preguntas') {
-    return correr({ preguntas: paso.preguntas, titulo: `${paso.icono} ${paso.titulo}`, salir: '#inicio', inicio: paso.inicio || 0,
-      alAvanzar: i => { paso.inicio = i; guardar(); },
+    return correr({ preguntas: paso.preguntas, titulo: `${paso.icono} ${paso.titulo}`, salir: '#inicio', inicio: paso.inicio || 0, previo: paso.acum,
+      alAvanzar: (i, a) => { paso.inicio = i; paso.acum = a; guardar(); },
       alTerminar: r => { paso.res = r; E.registrarSesion({ materia: paso.preguntas[0]?.materia || 'mix', total: r.total, correctas: r.correctas }); entrePasos(paso, r, siguiente); } });
   }
   if (paso.tipo === 'vocab') {
-    if (paso.leidas) return correr({ preguntas: paso.preguntas, titulo: '📖 Palabras del día', salir: '#inicio', inicio: paso.inicio || 0, alAvanzar: i => { paso.inicio = i; guardar(); }, alTerminar: r => entrePasos(paso, r, siguiente) });
+    if (paso.leidas) return correr({ preguntas: paso.preguntas, titulo: '📖 Palabras del día', salir: '#inicio', inicio: paso.inicio || 0, previo: paso.acum, alAvanzar: (i, a) => { paso.inicio = i; paso.acum = a; guardar(); }, alTerminar: r => entrePasos(paso, r, siguiente) });
     app.innerHTML = `<div class="vista">${encabezado}<h1 style="margin-bottom:6px">📖 Palabras del día</h1>
       <p class="suave peq" style="margin-bottom:12px">Léelas con calma. El reto: úsalas hoy en una plática o un mensaje. Mañana te pregunto.</p>
       ${paso.palabras.map(([p, d, e]) => `<div class="card palabra"><div class="fila entre"><h2 style="margin:0">${esc(p)}</h2><button class="btn chico sec" data-oir="${esc(p + '. ' + d + '. Por ejemplo: ' + e)}">🔈</button></div>
@@ -412,16 +453,18 @@ function vistaClase() {
     return;
   }
   if (paso.tipo === 'cultura') {
-    if (paso.preguntas && paso.vistaLeccion) return correr({ preguntas: paso.preguntas, titulo: `🏛️ ${paso.categoria}`, salir: '#inicio', inicio: paso.inicio || 0, alAvanzar: i => { paso.inicio = i; guardar(); }, alTerminar: r => { E.registrarSesion({ materia: 'cul', total: r.total, correctas: r.correctas }); entrePasos(paso, r, siguiente); } });
+    if (paso.preguntas && paso.vistaLeccion) return correr({ preguntas: paso.preguntas, titulo: `🏛️ ${paso.categoria}`, salir: '#inicio', inicio: paso.inicio || 0, previo: paso.acum, alAvanzar: (i, a) => { paso.inicio = i; paso.acum = a; guardar(); }, alTerminar: r => { E.registrarSesion({ materia: 'cul', total: r.total, correctas: r.correctas }); entrePasos(paso, r, siguiente); } });
     if (paso.preguntas) {
       const L = paso.leccion;
       app.innerHTML = `<div class="vista">${encabezado}
         ${L ? `<div class="card heroe"><div class="etiqueta">${esc(paso.categoria)} · ${G.GRADOS[S().grados.cul]}</div><h1 style="margin:6px 0 10px">${esc(L.titulo)}</h1>
           <p>${esc(L.explicacion)}</p>${L.dato ? `<p class="peq suave" style="margin-top:8px">✨ ${esc(L.dato)}</p>` : ''}
           <button class="btn chico sec" id="oir" style="margin-top:10px">🔈 Escuchar</button></div>`
-        : `<div class="card"><h2>🏛️ Cultura general</h2><p class="peq suave">${esc(paso.aviso || 'Preguntas del banco de MENTIS, con su explicación al responder.')}</p></div>`}
+        : `<div class="card"><h2>🏛️ Cultura general</h2><p class="peq suave">${esc(paso.aviso || 'Preguntas del banco de MENTIS, con su explicación al responder.')}</p>
+            ${paso.fallaIA && IA.iaLista() ? '<button class="btn chico sec" id="reintentar" style="margin-top:10px">🔄 Intentar otra vez con la profe IA</button>' : ''}</div>`}
         <button class="btn" id="go">Responder preguntas</button></div>`;
       if ($('#oir')) $('#oir').onclick = () => V.hablar(`${L.titulo}. ${L.explicacion}`);
+      if ($('#reintentar')) $('#reintentar').onclick = () => { paso.preguntas = null; paso.aviso = null; paso.fallaIA = false; guardar(); render(); };
       $('#go').onclick = () => { paso.vistaLeccion = true; guardar(); render(); };
       return;
     }
@@ -432,7 +475,7 @@ function vistaClase() {
     if (IA.iaLista()) {
       IA.leccionCultura(g, paso.categoria, S().eventos.filter(e => e.tipo === 'leccion').map(e => e.texto))
         .then(L => { if (L.preguntas.length < 3) throw new Error('Lección incompleta'); paso.leccion = L; paso.preguntas = L.preguntas; E.evento('leccion', L.titulo); guardar(); })
-        .catch(err => { paso.aviso = `No se pudo usar la IA (${err.message}). Usaremos el banco de preguntas.`; banco(); })
+        .catch(err => { paso.aviso = `${err.message} Por ahora usaremos el banco de preguntas.`; paso.fallaIA = true; banco(); })
         .finally(() => { if (location.hash === '#clase') render(); });
     } else { paso.aviso = S().ia.key ? 'Sin internet: usaremos el banco de preguntas de MENTIS.' : 'Conecta Gemini en Perfil → Ajustes para recibir lecciones nuevas cada día. Hoy usaremos el banco de MENTIS.'; banco(); render(); }
     return;
@@ -460,6 +503,7 @@ function vistaClase() {
       <p class="suave peq">Escribe 2 o 3 oraciones sobre tu día usando estas palabras:</p>
       <div class="fila" style="flex-wrap:wrap;gap:8px;margin:10px 0" id="chips">${paso.palabras.map(p => `<span class="chip lavanda" data-p="${esc(p)}">${esc(p)}</span>`).join('')}</div>
       <textarea id="txt" rows="6" placeholder="Hoy…">${esc(paso.borrador || '')}</textarea>
+      ${V.puedeEscuchar() ? '<button class="btn chico sec" id="dictar" style="margin-top:8px">🎙️ Dictar</button>' : ''}
       <div id="retro"></div>
       <button class="btn" id="guardar" style="margin-top:12px">Guardar y continuar</button>
       <button class="btn sec chico" id="saltar" style="margin-top:10px">Saltar por hoy</button></div>`;
@@ -467,6 +511,12 @@ function vistaClase() {
     const usadas = () => paso.palabras.filter(p => { const raiz = G.normalizar(p).slice(0, Math.max(4, p.length - 2)); return G.normalizar(txt.value).split(' ').some(w => w.startsWith(raiz)); });
     const marcar = () => { const u = usadas(); $('#chips').querySelectorAll('[data-p]').forEach(c => c.className = 'chip ' + (u.includes(c.dataset.p) ? 'salvia' : 'lavanda')); paso.borrador = txt.value; };
     txt.oninput = marcar; marcar();
+    if ($('#dictar')) $('#dictar').onclick = async e => {
+      const b = e.currentTarget; b.disabled = true; b.textContent = '🎙️ Te escucho… (habla y haz una pausa al terminar)';
+      try { const [t] = await V.escuchar(); txt.value = (txt.value.trim() + ' ' + t.charAt(0).toUpperCase() + t.slice(1) + '.').trim(); marcar(); b.textContent = '🎙️ Dictar otra oración'; }
+      catch (err) { b.textContent = err.message + ' Toca para intentar otra vez'; }
+      b.disabled = false;
+    };
     $('#guardar').onclick = async () => {
       if (txt.value.trim().split(/\s+/).length < 8) return toast('<span>✍️</span><div>Escribe al menos un par de oraciones.</div>');
       const u = usadas(); const completo = u.length === paso.palabras.length;
@@ -493,8 +543,8 @@ function vistaClase() {
       paso.preguntas = G.barajar(ids).slice(0, 10).map(id => S().bancoIA[id] ? { ...S().bancoIA[id], opciones: G.barajar(S().bancoIA[id].opciones) } : G.preguntaDeConcepto(id, S().conceptos[id])).filter(Boolean);
       guardar();
     }
-    return correr({ preguntas: paso.preguntas, titulo: '📝 Mini examen', salir: '#inicio', examen: true, inicio: paso.inicio || 0,
-      alAvanzar: i => { paso.inicio = i; guardar(); },
+    return correr({ preguntas: paso.preguntas, titulo: '📝 Mini examen', salir: '#inicio', examen: true, inicio: paso.inicio || 0, previo: paso.acum,
+      alAvanzar: (i, a) => { paso.inicio = i; paso.acum = a; guardar(); },
       alTerminar: r => {
         paso.res = r; c.examen = r; c.terminada = true; c.idx = c.pasos.length;
         E.registrarSesion({ materia: 'mix', total: r.total, correctas: r.correctas, tipo: 'examen' });
@@ -514,7 +564,7 @@ function entrePasos(paso, r, siguiente) {
     <a href="#inicio" class="btn sec" style="display:block;text-decoration:none;margin-top:10px">Pausar y volver después</a></div>`;
   avisosPendientes();
   $('#sig').onclick = siguiente;
-  c.idx++; paso.inicio = 0; guardar(); // el progreso queda guardado aunque salga
+  c.idx++; paso.inicio = 0; paso.acum = null; guardar(); // el progreso queda guardado aunque salga
   $('#sig').onclick = () => render();
 }
 function resumenClase(recien = false) {
@@ -531,6 +581,7 @@ function vistaEstudiar() {
   const s = S();
   app.innerHTML = `<div class="vista"><h1 style="margin-bottom:6px">Estudiar</h1>
   <p class="suave peq" style="margin-bottom:14px">Práctica libre y exámenes de nivel. Aprueba con 8 de 10 para subir de grado.</p>
+  <a href="#concurso" class="card heroe" style="display:flex;gap:12px;align-items:center;text-decoration:none;color:inherit">${pj('leylapi', 'jugar', 64)}<div><h2 style="margin:0">🏆 Modo concurso</h2><p class="peq suave">12 preguntas contrarreloj, de fácil a nivel Harvard. Récord: ${S().recordConcurso || 0} puntos.</p></div></a>
   <a href="#voz" class="card heroe" style="display:flex;gap:12px;align-items:center;text-decoration:none;color:inherit">${pj('kalipi', 'jugar', 64)}<div><h2 style="margin:0">⚡ Relámpago por voz</h2><p class="peq suave">60 segundos: te pregunto en voz alta y respondes hablando.</p></div></a>
   ${Object.entries(MAT).map(([id, m]) => {
     const g = s.grados[id]; const hoyHecho = s.examenesNivel[id]?.f === hoy();
@@ -652,6 +703,83 @@ async function jugarVoz() {
   pantallaResultado({ titulo: `⚡ ${correctas} en 60 segundos`, correctas, total, xp, extra: `<p class="peq suave">Récord personal: ${marcaVoz(correctas)}</p>`, botones: boton('Jugar otra vez', '#voz') + boton('Volver', '#estudiar', true) });
 }
 const esperar = ms => new Promise(r => setTimeout(r, ms));
+
+/* ================= Modo concurso ================= */
+function vistaConcurso() {
+  const s = S();
+  app.innerHTML = `<div class="vista">${volver('#estudiar', 'Estudiar')}
+    <div class="card heroe" style="margin-top:10px;text-align:center">${pj('leylapi', 'jugar', 100)}
+      <h1>🏆 Modo concurso</h1>
+      <p class="peq">12 preguntas de cultura general, vocabulario y geografía. Empiezan fáciles y terminan en nivel Harvard.</p>
+      <p class="peq suave">20 segundos por pregunta. Entre más rápido respondas, más puntos. Si encadenas aciertos, ganas bonus de racha. Puedes tocar o responder con voz.</p>
+      <p style="margin:10px 0"><b>Tu récord: ${s.recordConcurso || 0} puntos</b></p>
+      <button class="btn" id="go">¡Empezar!</button></div></div>${nav('estudiar')}`;
+  $('#go').onclick = () => jugarConcurso();
+}
+function preguntasConcurso() {
+  const C = S().conceptos, f = hoy(), usadas = new Set();
+  return Array.from({ length: 12 }, (_, k) => {
+    const g = Math.min(5, 1 + Math.floor(k * 5 / 12));
+    let p = null;
+    for (let t = 0; t < 8 && (!p || usadas.has(p.id)); t++) {
+      if (k % 4 === 3) { const pool = G.PAISES.filter(x => x[3] === Math.min(4, g)); p = G.preguntaPais(G.elegir(pool), g >= 5 ? 'inversa' : 'opc'); }
+      else if (k % 4 === 1) { const pool = G.VOCAB.filter(w => w[3] === g); p = G.preguntaVocab(G.elegir(pool), Math.random() < .5 ? 'def' : 'pal'); }
+      else { const pool = G.CULTURA.filter(c => c[1] === g); p = G.preguntaCultura(G.elegir(pool)); }
+    }
+    usadas.add(p.id); return { ...p, grado: g };
+  });
+}
+function jugarConcurso() {
+  const pregs = preguntasConcurso(); const LIM = 20;
+  let i = 0, puntos = 0, racha = 0, correctas = 0, xp = 0, timer = null, bloqueado = false;
+  limpiar = () => clearInterval(timer);
+  const pinta = () => {
+    const p = pregs[i]; bloqueado = false; const t0 = performance.now();
+    app.innerHTML = `<div class="vista"><div class="fila entre"><a href="#estudiar" class="suave" style="text-decoration:none">✕ Salir</a>
+      <span class="chip lavanda">${i + 1}/12 · ${G.GRADOS[p.grado]}</span><span class="chip rosa">${puntos} pts</span></div>
+      <div class="card ejercicio"><div class="barra" style="height:8px"><i id="tiempo" style="width:100%;transition:width .2s linear"></i></div>
+        <div class="peq suave" style="margin-top:12px">${racha >= 2 ? `🔥 Racha ×${racha}` : esc(p.categoria || MAT[p.materia]?.nombre || '')}</div>
+        <div class="pregunta larga">${esc(p.enunciado)}</div>
+        <div class="opciones">${p.opciones.map((o, k) => `<button data-k="${k}">${esc(o)}</button>`).join('')}</div>
+        ${V.puedeEscuchar() ? '<button class="btn chico sec" id="mic" style="margin-top:10px">🎙️ Responder con voz</button>' : ''}
+        <div id="oiste" class="peq suave"></div><div id="fb"></div></div></div>`;
+    const fin = Date.now() + LIM * 1000;
+    clearInterval(timer);
+    timer = setInterval(() => { const r = Math.max(0, fin - Date.now()); const b = $('#tiempo'); if (b) b.style.width = (r / (LIM * 10)) + '%'; if (r <= 0) responder(null); }, 200);
+    app.querySelector('.opciones').onclick = e => { const b = e.target.closest('button'); if (b) responder(p.opciones[+b.dataset.k]); };
+    if ($('#mic')) $('#mic').onclick = e => escucharPara(e.currentTarget, p, (r, oido) => { $('#oiste').textContent = `Escuché: “${oido}”`; responder(r, true); });
+    function responder(resp, porVoz = false) {
+      if (bloqueado) return; bloqueado = true; clearInterval(timer);
+      const seg = (performance.now() - t0) / 1000;
+      const ok = resp != null && G.esCorrecta(p, resp);
+      const res = E.registrarIntento({ materia: p.materia, id: p.id, nombre: p.nombre, ok, segundos: seg, voz: porVoz });
+      xp += res.xp;
+      let gan = 0;
+      if (ok) { racha++; correctas++; gan = Math.round((100 + Math.max(0, LIM - seg) / LIM * 100) * (1 + 0.1 * Math.min(racha - 1, 5)) * (0.8 + 0.2 * p.grado)); puntos += gan; }
+      else racha = 0;
+      app.querySelectorAll('.opciones button').forEach(b => { if (b.textContent === p.a) b.classList.add('ok'); else if (b.textContent === resp) b.classList.add('mal'); b.disabled = true; });
+      if ($('#mic')) $('#mic').remove();
+      $('#fb').innerHTML = `<div class="feedback ${ok ? 'si' : 'no'}">${pj('kalipi', ok ? 'celebrar' : 'triste', 52)}<div style="flex:1;text-align:left">
+        <b>${ok ? `¡Correcto! +${gan} pts` : resp == null ? '¡Se acabó el tiempo!' : 'Incorrecto'}</b>${!ok ? `<div>Era <b>${esc(p.a)}</b></div>` : ''}
+        ${p.explicacion ? `<div class="peq suave">${esc(p.explicacion)}</div>` : ''}</div></div>
+        <button class="btn" id="sig" style="margin-top:10px">${i < 11 ? 'Siguiente' : 'Ver resultado'}</button>`;
+      if (ok) flotante(`+${gan}`);
+      avisosPendientes();
+      $('#sig').onclick = () => { i++; if (i < pregs.length) pinta(); else terminar(); };
+    }
+  };
+  const terminar = () => {
+    limpiar = null;
+    const s = S(); const antes = s.recordConcurso || 0; const nuevo = puntos > antes;
+    if (nuevo) { s.recordConcurso = puntos; }
+    E.registrarSesion({ materia: 'mix', total: 12, correctas, tipo: 'concurso' });
+    guardar();
+    pantallaResultado({ titulo: nuevo ? `¡Nuevo récord: ${puntos} puntos!` : `${puntos} puntos`, correctas, total: 12, xp,
+      extra: `<p class="peq suave">${nuevo ? (antes ? `Superaste tu récord anterior de ${antes}.` : 'Tu primer récord.') : `Tu récord sigue en ${antes} puntos.`}</p>`,
+      botones: boton('Jugar otra vez', '#concurso') + boton('Volver', '#estudiar', true) });
+  };
+  pinta();
+}
 function marcaVoz(n) { const s = S(); s.recordVoz = Math.max(s.recordVoz || 0, n); guardar(); return s.recordVoz; }
 
 /* ================= Libros ================= */
@@ -776,7 +904,7 @@ function vistaAjustes() {
     <p class="peq suave">Todo se guarda solo en este dispositivo. Descarga un respaldo de vez en cuando.</p>
     <div class="fila" style="margin-top:10px"><button class="btn chico" id="exp">Descargar respaldo</button><label class="btn chico sec" style="cursor:pointer">Restaurar<input type="file" id="imp" accept=".json,application/json" hidden></label></div>
     <button class="btn chico sec" id="borrar" style="margin-top:14px;color:var(--mal)">Borrar todo mi progreso</button></div>
-  <p class="peq suave" style="text-align:center">MENTIS · versión 0.2</p>
+  <p class="peq suave" style="text-align:center">MENTIS · versión 0.2.4</p>
   </div>${nav('perfil')}`;
 
   $('#tema').onclick = e => { const b = e.target.closest('button'); if (!b) return; s.ajustes.tema = b.dataset.v; guardar(); render(); };

@@ -305,6 +305,7 @@ export const LOGROS = [
   { id: 'primer_dominio', t: 'Primer concepto dominado', d: 'Dominaste tu primer concepto con repaso espaciado.', i: '⭐', meta: () => dominados(), total: 1 },
   { id: 'misiones_dia', t: 'Día completo', d: 'Completaste todas las misiones de un día.', i: '🎯' },
   { id: 'regreso', t: 'De vuelta', d: 'Regresaste a estudiar después de una pausa.', i: '🌤️' },
+  { id: 'concurso_1000', t: 'Concursante', d: 'Hiciste 1000 puntos o más en el modo concurso.', i: '🏆', meta: () => S().recordConcurso || 0, total: 1000 },
   { id: 'ensayo_1', t: 'Primer escrito', d: 'Escribiste usando tus palabras nuevas.', i: '✍️', meta: () => S().escritos.filter(e => e.completo).length, total: 1 },
 ];
 

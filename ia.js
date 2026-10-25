@@ -13,20 +13,26 @@ async function llamar(prompt, { json = true, temperatura = 0.7 } = {}) {
   const { key, modelo } = S().ia;
   if (!key) throw new Error('Primero conecta tu key de Gemini en Perfil → Ajustes.');
   if (!navigator.onLine) throw new Error('Necesitas internet para usar a la profesora IA.');
-  let res;
-  try {
-    res = await fetch(`${BASE}/models/${encodeURIComponent(modelo)}:generateContent`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
-      body: JSON.stringify({
-        contents: [{ role: 'user', parts: [{ text: CONTEXTO + '\n\n' + prompt }] }],
-        generationConfig: { temperature: temperatura, ...(json ? { responseMimeType: 'application/json' } : {}) },
-      }),
-    });
-  } catch { throw new Error('No se pudo conectar con Gemini. Revisa tu internet.'); }
+  let res, intento = 0;
+  // Si Gemini está saturado (503/500), espera un poco y reintenta hasta 2 veces
+  while (true) {
+    try {
+      res = await fetch(`${BASE}/models/${encodeURIComponent(modelo)}:generateContent`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
+        body: JSON.stringify({
+          contents: [{ role: 'user', parts: [{ text: CONTEXTO + '\n\n' + prompt }] }],
+          generationConfig: { temperature: temperatura, ...(json ? { responseMimeType: 'application/json' } : {}) },
+        }),
+      });
+    } catch { throw new Error('No se pudo conectar con Gemini. Revisa tu internet.'); }
+    if ((res.status === 503 || res.status === 500) && intento < 2) { await new Promise(r => setTimeout(r, intento ? 5000 : 2000)); intento++; continue; }
+    break;
+  }
   if (!res.ok) {
     let msg = ''; try { msg = (await res.json()).error?.message || ''; } catch {}
     if (res.status === 429) throw new Error('Llegaste al límite gratis de Gemini por ahora. Intenta en unos minutos.');
+    if (res.status === 503 || res.status === 500) throw new Error('Gemini está saturado en este momento (no es tu key). Suele pasar unos minutos.');
     if (res.status === 400 && /key/i.test(msg)) throw new Error('La key de Gemini no es válida. Revísala en Ajustes.');
     if (res.status === 404) throw new Error(`El modelo “${modelo}” no existe para tu key. Elige otro en Ajustes.`);
     throw new Error(`Gemini respondió con error ${res.status}. ${msg}`.trim());
