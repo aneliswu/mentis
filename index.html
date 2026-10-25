@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>MENTIS</title>
+<meta name="description" content="Tu academia personal de estudio">
+<meta name="theme-color" content="#FBF7F2">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="stylesheet" href="styles.css">
+<script>
+  // aplica el tema antes de pintar para evitar parpadeo
+  try { const t = (JSON.parse(localStorage.getItem('mentis:v1')) || {}).ajustes?.tema || 'sistema';
+    document.documentElement.dataset.tema = (t === 'oscuro' || (t === 'sistema' && matchMedia('(prefers-color-scheme: dark)').matches)) ? 'oscuro' : 'claro'; } catch (e) {}
+</script>
+</head>
+<body>
+<main id="app"></main>
+<script type="module" src="app.js"></script>
+</body>
+</html>
