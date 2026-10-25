@@ -242,6 +242,8 @@ export function repasosPendientes() {
 export function misionesDeHoy() {
   const s = S();
   const f = hoy();
+  // si la lista de hoy trae misiones de una versión anterior, se vuelve a armar
+  if (s.misiones.fecha === f && s.misiones.lista.some(m => !PLANTILLAS[m.id])) s.misiones.fecha = null;
   if (s.misiones.fecha !== f) {
     const elegidas = (s.perfil?.misionesActivas || MISIONES_DEF)
       .filter(id => PLANTILLAS[id]?.disponible());

@@ -89,7 +89,13 @@ function render() {
   if (!S().perfil) return vistaBienvenida();
   const [ruta, arg] = (location.hash.slice(1) || 'inicio').split('/');
   const vistas = { inicio: vistaInicio, clase: vistaClase, estudiar: vistaEstudiar, practica: () => vistaPractica(arg), nivel: () => vistaNivel(arg), voz: vistaVoz, libros: vistaLibros, perfil: vistaPerfil, misiones: vistaMisiones, logros: vistaLogros, ajustes: vistaAjustes };
-  (vistas[ruta] || vistaInicio)();
+  try { (vistas[ruta] || vistaInicio)(); }
+  catch (err) {
+    console.error(err);
+    app.innerHTML = `<div class="vista" style="text-align:center;padding-top:30px">${pj('leylapi', 'triste', 100)}<h1>Algo salió mal</h1>
+      <p class="suave peq">Error: ${esc(err.message)}</p><p class="suave peq">Mándale una captura de esta pantalla a quien te ayuda con la app.</p>
+      <a class="btn" href="#perfil" style="display:block;text-decoration:none;margin-top:12px">Ir a Perfil</a></div>${nav('')}`;
+  }
   window.scrollTo(0, 0);
   animarEntrada();
 }
@@ -802,5 +808,7 @@ function vistaAjustes() {
 }
 
 /* ================= Arranque ================= */
+addEventListener('error', e => toast(`<span>⚠️</span><div class="peq">Error: ${esc(e.message)}</div>`, 6000));
+addEventListener('unhandledrejection', e => toast(`<span>⚠️</span><div class="peq">Error: ${esc(e.reason?.message || e.reason)}</div>`, 6000));
 render();
 if ('serviceWorker' in navigator) addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
