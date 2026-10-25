@@ -29,11 +29,11 @@ export function nivelDe(xp) {
 
 /* ---------------- Materias ---------------- */
 export const MATERIAS = {
-  calculo: { nombre: 'Cálculo mental', icono: '🧮', color: 'rosa', lista: true },
-  capitales: { nombre: 'Países y capitales', icono: '🌍', color: 'salvia', lista: false },
-  vocabulario: { nombre: 'Vocabulario', icono: '📖', color: 'lavanda', lista: false },
-  logica: { nombre: 'Lógica', icono: '🧩', color: 'durazno', lista: false },
-  escritura: { nombre: 'Escritura y oral', icono: '✍️', color: 'rosa', lista: false },
+  mat: { nombre: 'Matemáticas', icono: '🧮', color: 'rosa' },
+  len: { nombre: 'Lengua y vocabulario', icono: '📖', color: 'lavanda' },
+  geo: { nombre: 'Geografía', icono: '🌍', color: 'salvia' },
+  cul: { nombre: 'Cultura general', icono: '🏛️', color: 'durazno' },
+  log: { nombre: 'Lógica', icono: '🧩', color: 'lavanda' },
 };
 
 /* ---------------- Repaso espaciado ---------------- */
@@ -49,7 +49,7 @@ export const precision = arr => arr.length ? arr.filter(Boolean).length / arr.le
 
 /* ---------------- Registro de un intento ---------------- */
 // Devuelve {xp, motivos:[texto], nuevoDominio:bool}
-export function registrarIntento({ materia, id, nombre, ok, segundos }) {
+export function registrarIntento({ materia, id, nombre, ok, segundos, texto = false, voz = false }) {
   const s = S();
   const f = hoy();
   const d = dia(f);
@@ -69,7 +69,7 @@ export function registrarIntento({ materia, id, nombre, ok, segundos }) {
   d.segundos += Math.min(segundos, 120); // tiempo activo de respuesta, con tope por ejercicio
   if (ok) d.correctas++;
 
-  s.intentos.push({ f, t: Date.now(), m: materia, h: id, ok, s: Math.round(segundos * 10) / 10, r: !!tuvoErrorAntes });
+  s.intentos.push({ f, t: Date.now(), m: materia, h: id, ok, s: Math.round(segundos * 10) / 10, r: !!tuvoErrorAntes, ...(texto ? { tx: 1 } : {}), ...(voz ? { v: 1 } : {}) });
 
   if (ok) {
     // XP base con rendimientos decrecientes para no premiar repetir sin pensar
@@ -114,6 +114,7 @@ export function registrarIntento({ materia, id, nombre, ok, segundos }) {
     desbloquear('regreso');
   }
 
+  if (ok && texto) { xp += 1; }
   sumarXP(xp);
   revisarMisiones();
   revisarLogros();
@@ -121,13 +122,13 @@ export function registrarIntento({ materia, id, nombre, ok, segundos }) {
   return { xp, motivos, nuevoDominio };
 }
 
-export function registrarSesion({ materia, total, correctas }) {
+export function registrarSesion({ materia, total, correctas, tipo = 'sesion' }) {
   const s = S();
   const f = hoy();
   let xp = 0; const motivos = [];
   // Bono solo si la sesión fue real (≥8 ejercicios) y con buena precisión
   if (total >= 8 && correctas / total >= 0.8) { xp += 10; motivos.push('Sesión excelente'); }
-  s.eventos.push({ f, tipo: 'sesion', m: materia, total, correctas });
+  s.eventos.push({ f, tipo, m: materia, total, correctas });
   if (s.eventos.length > 500) s.eventos = s.eventos.slice(-500);
   desbloquear('primera_leccion');
   sumarXP(xp);
@@ -137,14 +138,14 @@ export function registrarSesion({ materia, total, correctas }) {
   return { xp, motivos };
 }
 
-function evento(tipo, texto) {
+export function evento(tipo, texto) {
   const s = S();
   s.eventos.push({ f: hoy(), tipo, texto });
   if (s.eventos.length > 500) s.eventos = s.eventos.slice(-500);
 }
 
 let nivelPrevio = null;
-function sumarXP(x) {
+export function sumarXP(x) {
   if (!x) return;
   const s = S();
   const antes = nivelDe(s.xp).num;
@@ -202,25 +203,29 @@ export function semanaActual() {
 
 /* ---------------- Misiones ---------------- */
 // Cada misión mide progreso con datos reales de hoy
+const hoyI = (f, fn) => S().intentos.filter(i => i.f === f && fn(i));
 export const PLANTILLAS = {
-  calc10: { texto: 'Resuelve 10 cálculos mentales', meta: 10, disponible: () => true,
-    medir: f => S().intentos.filter(i => i.f === f && i.m === 'calculo' && i.ok).length },
-  calcSesion: { texto: 'Logra 8 de 10 o más en una sesión de cálculo', meta: 1, disponible: () => true,
-    medir: f => S().eventos.filter(e => e.f === f && e.tipo === 'sesion' && e.m === 'calculo' && e.total >= 10 && e.correctas >= 8).length },
+  clase: { texto: 'Completa tu clase del día', meta: 1, disponible: () => true,
+    medir: f => S().clase?.fecha === f && S().clase.terminada ? 1 : 0 },
+  examen8: { texto: 'Saca 8 de 10 o más en el mini examen', meta: 1, disponible: () => true,
+    medir: f => S().eventos.some(e => e.f === f && e.tipo === 'examen' && e.correctas >= 8) ? 1 : 0 },
+  mate10: { texto: 'Resuelve 10 ejercicios de matemáticas', meta: 10, disponible: () => true,
+    medir: f => hoyI(f, i => i.m === 'mat' && i.ok).length },
+  capitales5: { texto: 'Recuerda 5 capitales sin pistas', meta: 5, disponible: () => true,
+    medir: f => hoyI(f, i => i.m === 'geo' && i.ok && i.tx).length },
+  palabras3: { texto: 'Aprende 3 palabras y úsalas en una oración', meta: 1, disponible: () => true,
+    medir: f => S().escritos.some(e => e.f === f && e.completo) ? 1 : 0 },
+  oral: { texto: 'Responde 5 preguntas por voz', meta: 5, disponible: () => true,
+    medir: f => hoyI(f, i => i.v && i.ok).length },
+  logica: { texto: 'Resuelve 3 problemas de lógica', meta: 3, disponible: () => true,
+    medir: f => hoyI(f, i => i.m === 'log' && i.ok).length },
   repasos: { texto: 'Completa tus repasos pendientes', meta: 1, disponible: () => pendientesInicioDia() > 0,
     medir: () => repasosPendientes().length === 0 ? 1 : 0 },
-  nueva: { texto: 'Practica una habilidad nueva', meta: 1, disponible: () => true,
-    medir: f => Object.values(S().conceptos).filter(c => c.primeraVez === f).length >= 1 ? 1 : 0 },
   precision: { texto: '20 ejercicios con 80% de aciertos o más', meta: 20, disponible: () => true,
     medir: f => { const h = S().intentos.filter(i => i.f === f); return precision(h.map(i => i.ok)) >= 0.8 ? h.length : Math.min(h.length, 19); } },
-  // Próximas fases (se activan cuando exista la materia)
-  capitales5: { texto: 'Recuerda 5 capitales sin pistas', meta: 5, disponible: () => MATERIAS.capitales.lista,
-    medir: f => S().intentos.filter(i => i.f === f && i.m === 'capitales' && i.ok).length },
-  palabras3: { texto: 'Aprende 3 palabras y úsalas en una oración', meta: 3, disponible: () => MATERIAS.vocabulario.lista, medir: () => 0 },
-  oral: { texto: 'Explica un concepto en voz alta', meta: 1, disponible: () => MATERIAS.escritura.lista, medir: () => 0 },
-  logica: { texto: 'Resuelve un problema de lógica', meta: 1, disponible: () => MATERIAS.logica.lista,
-    medir: f => S().intentos.filter(i => i.f === f && i.m === 'logica' && i.ok).length },
 };
+export const MISIONES_DEF = ['clase', 'examen8', 'mate10', 'capitales5', 'palabras3', 'oral', 'logica', 'repasos', 'precision'];
+
 
 let _pendInicio = null;
 function pendientesInicioDia() {
@@ -238,7 +243,7 @@ export function misionesDeHoy() {
   const s = S();
   const f = hoy();
   if (s.misiones.fecha !== f) {
-    const elegidas = (s.perfil?.misionesActivas || ['calc10', 'calcSesion', 'repasos', 'nueva', 'precision'])
+    const elegidas = (s.perfil?.misionesActivas || MISIONES_DEF)
       .filter(id => PLANTILLAS[id]?.disponible());
     const n = s.perfil?.misionesPorDia || 3;
     // rotación determinista por fecha para variar sin azar caprichoso
@@ -246,6 +251,7 @@ export function misionesDeHoy() {
     const orden = elegidas.map((id, i) => ({ id, k: (semilla * (i + 7)) % 97 })).sort((a, b) => a.k - b.k).map(o => o.id);
     // los repasos pendientes siempre entran si existen
     if (elegidas.includes('repasos') && orden.indexOf('repasos') >= n) { orden.splice(orden.indexOf('repasos'), 1); orden.unshift('repasos'); }
+    if (elegidas.includes('clase')) { orden.splice(orden.indexOf('clase'), 1); orden.unshift('clase'); }
     s.misiones = { fecha: f, pendInicio: repasosPendientes().length, lista: orden.slice(0, n).map(id => ({ id, hecha: false })) };
     guardar();
   }
@@ -281,19 +287,25 @@ export const tomarMisionesRecien = () => _misionRecien.splice(0);
 /* ---------------- Logros ---------------- */
 export const LOGROS = [
   { id: 'primera_leccion', t: 'Primera lección', d: 'Terminaste tu primera sesión de estudio.', i: '🌱' },
-  { id: 'calc_100', t: '100 cálculos correctos', d: 'Resolviste 100 cálculos mentales bien.', i: '🧮', meta: () => contar('calculo'), total: 100 },
-  { id: 'paises_20', t: '20 países dominados', d: 'Dominaste 20 países y sus capitales.', i: '🌍', meta: () => dominadosDe('capitales'), total: 20, fase: 2 },
-  { id: 'oral_1', t: 'Primera explicación oral', d: 'Explicaste un concepto en voz alta.', i: '🎙️', fase: 3 },
-  { id: 'palabras_50', t: '50 palabras aprendidas', d: 'Usaste 50 palabras nuevas en tu día a día.', i: '📖', meta: () => dominadosDe('vocabulario'), total: 50, fase: 2 },
+  { id: 'clase_1', t: 'Primera clase completa', d: 'Terminaste una clase del día con su mini examen.', i: '🎒' },
+  { id: 'clase_7', t: 'Siete clases', d: 'Completaste 7 clases del día.', i: '📅', meta: () => S().eventos.filter(e => e.tipo === 'examen').length, total: 7 },
+  { id: 'calc_100', t: '100 cálculos correctos', d: 'Resolviste 100 ejercicios de matemáticas bien.', i: '🧮', meta: () => contar('mat'), total: 100 },
+  { id: 'paises_20', t: '20 países dominados', d: 'Dominaste 20 países y sus capitales.', i: '🌍', meta: () => dominadosDe('geo'), total: 20 },
+  { id: 'palabras_50', t: '50 palabras aprendidas', d: 'Dominaste 50 palabras nuevas.', i: '📖', meta: () => dominadosDe('len'), total: 50 },
+  { id: 'palabra_usada', t: 'Palabra en la vida real', d: 'Usaste una palabra nueva en una conversación.', i: '💬', meta: () => Object.values(S().conceptos).filter(c => c.usada).length, total: 1 },
+  { id: 'voz_10', t: 'Relámpago', d: 'Respondiste 10 preguntas correctas por voz.', i: '⚡', meta: () => S().intentos.filter(i => i.v && i.ok).length, total: 10 },
   { id: 'semana', t: 'Primera semana de constancia', d: 'Llegaste a una racha de 7 días.', i: '🔥', meta: () => rachaMasLarga(), total: 7 },
   { id: 'retenidos_10', t: '10 conceptos retenidos 30 días', d: 'Recordaste 10 conceptos dominados 30 días después.', i: '🧠', meta: () => Object.values(S().conceptos).filter(c => c.retenido30).length, total: 10 },
-  { id: 'ensayo_1', t: 'Primer ensayo argumentativo', d: 'Escribiste tu primer ensayo.', i: '✍️', fase: 2 },
-  { id: 'evaluacion', t: 'Primera evaluación avanzada', d: 'Completaste una evaluación avanzada.', i: '🎓', fase: 4 },
+  { id: 'libro_1', t: 'Primer libro comprendido', d: 'Aprobaste el mini examen de un libro que leíste.', i: '📚', meta: () => S().libros.filter(l => l.comprendido).length, total: 1 },
+  { id: 'libro_5', t: 'Lectora', d: 'Cinco libros comprendidos.', i: '🦉', meta: () => S().libros.filter(l => l.comprendido).length, total: 5 },
+  { id: 'evaluacion', t: 'Primera evaluación avanzada', d: 'Aprobaste un examen de nivel de Preparatoria o superior.', i: '🎓' },
+  { id: 'harvard', t: 'Nivel Harvard', d: 'Llegaste al grado Harvard en una materia.', i: '🏛️', meta: () => Math.max(...Object.values(S().grados)), total: 5 },
   { id: 'primer_dominio', t: 'Primer concepto dominado', d: 'Dominaste tu primer concepto con repaso espaciado.', i: '⭐', meta: () => dominados(), total: 1 },
   { id: 'misiones_dia', t: 'Día completo', d: 'Completaste todas las misiones de un día.', i: '🎯' },
   { id: 'regreso', t: 'De vuelta', d: 'Regresaste a estudiar después de una pausa.', i: '🌤️' },
-  { id: 'nivel_3', t: 'Investigadora', d: 'Alcanzaste el nivel Investigadora.', i: '🔎', meta: () => S().xp, total: 500 },
+  { id: 'ensayo_1', t: 'Primer escrito', d: 'Escribiste usando tus palabras nuevas.', i: '✍️', meta: () => S().escritos.filter(e => e.completo).length, total: 1 },
 ];
+
 
 const contar = m => S().intentos.filter(i => i.m === m && i.ok).length;
 export const dominados = () => Object.values(S().conceptos).filter(c => c.dominado).length;
@@ -376,13 +388,16 @@ export function mensajeMascota() {
   const mis = misionesDeHoy();
   const faltan = mis.filter(m => !m.hecha).length;
   const ultimo = ultimoDiaDeEstudio(f);
+  const clase = s.clase?.fecha === f ? s.clase : null;
+  const R = (texto, pose) => ({ texto, pose });
 
-  if (ultimoEv && ultimoEv.f === f && ultimoEv.tipo === 'nivel') return `¡${ultimoEv.texto} Estoy muy orgulloso de ti!`;
-  if (ultimoEv && ultimoEv.f === f && ultimoEv.tipo === 'dominio') return `${ultimoEv.texto} Eso ya es tuyo. 🐾`;
-  if (st.hoy.ejercicios === 0 && ultimo && difDias(ultimo, f) >= 3) return `¡Hola${nombre ? ', ' + nombre : ''}! Te extrañé. Un ratito hoy ya cuenta, sin presión.`;
-  if (st.hoy.ejercicios === 0 && st.pendientes > 0) return `Tienes ${st.pendientes} ${st.pendientes === 1 ? 'repaso' : 'repasos'} listos. Es el mejor momento para recordarlos.`;
-  if (st.hoy.ejercicios === 0 && st.racha > 1) return `Llevas ${st.racha} días seguidos. ¿Seguimos hoy?`;
-  if (st.hoy.ejercicios === 0) return `¡Hola${nombre ? ', ' + nombre : ''}! Hoy tienes ${mis.length} misiones esperándote.`;
-  if (faltan === 0) return '¡Misiones completas! Ya puedes descansar con la mente tranquila.';
-  return `Vas muy bien: ${st.hoy.correctas} de ${st.hoy.ejercicios} correctas hoy. ${faltan === 1 ? 'Te falta 1 misión.' : `Te faltan ${faltan} misiones.`}`;
+  if (ultimoEv && ultimoEv.f === f && ultimoEv.tipo === 'nivel') return R(`${ultimoEv.texto} ¡Estoy muy orgullosa de ti!`, 'celebrar');
+  if (ultimoEv && ultimoEv.f === f && ultimoEv.tipo === 'dominio') return R(`${ultimoEv.texto} Eso ya es tuyo. 🐾`, 'celebrar');
+  if (st.hoy.ejercicios === 0 && ultimo && difDias(ultimo, f) >= 3) return R(`¡Hola${nombre ? ', ' + nombre : ''}! Te extrañé. Un ratito hoy ya cuenta, sin presión.`, 'triste');
+  if (clase?.terminada && faltan === 0) return R('¡Clase y misiones completas! Hoy sí que aprendiste. Ya puedes descansar.', 'dormir');
+  if (clase?.terminada) return R(`¡Clase terminada! ${faltan === 1 ? 'Te falta 1 misión.' : `Te faltan ${faltan} misiones.`}`, 'feliz');
+  if (clase && clase.idx > 0) return R(`Vas en el paso ${clase.idx + 1} de ${clase.pasos.length} de tu clase. ¿Seguimos?`, 'jugar');
+  if (st.pendientes > 0) return R(`Tienes ${st.pendientes} ${st.pendientes === 1 ? 'repaso listo' : 'repasos listos'}. Tu clase de hoy empieza por ahí.`, 'pensando');
+  if (st.racha > 1) return R(`Llevas ${st.racha} días seguidos. ¿Empezamos la clase de hoy?`, 'feliz');
+  return R(`¡Hola${nombre ? ', ' + nombre : ''}! Tu clase de hoy te espera.`, 'saludo');
 }

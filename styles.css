@@ -213,3 +213,23 @@ nav.abajo a.on .i { filter: none; transform: translateY(-1px); }
 .rejilla3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
 
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
+
+/* ---------- v0.2 ---------- */
+.pj { object-fit: contain; flex: none; filter: drop-shadow(0 4px 8px rgba(0,0,0,.12)); animation: respirar 4s ease-in-out infinite; }
+:root[data-tema="oscuro"] .pj { filter: drop-shadow(0 0 10px rgba(236,222,250,.35)); }
+.pj.salta { animation: saltito .6s ease 2; }
+.mascota .pj { animation: respirar 4s ease-in-out infinite; }
+.pregunta { white-space: pre-line; }
+.pregunta.larga { font-size: 1.35rem; line-height: 1.35; }
+.lectura { background: var(--lavanda-bg); color: var(--texto); border-radius: 12px; padding: 8px 12px; margin: 4px 0 10px; font-size: .92rem; }
+.opciones { display: flex; flex-direction: column; gap: 10px; margin-top: 14px; }
+.opciones button { text-align: left; padding: 14px 16px; border-radius: 16px; border: 1px solid var(--borde); background: var(--card-solid); font-weight: 700; cursor: pointer; transition: .2s; line-height: 1.35; }
+.opciones button:active { transform: scale(.98); }
+.opciones button.ok { background: var(--salvia-bg); border-color: var(--salvia); color: var(--texto); }
+.opciones button.mal { background: var(--rosa-bg); border-color: var(--mal); }
+.opciones button:disabled { cursor: default; }
+.feedback { display: flex; gap: 10px; align-items: center; margin-top: 14px; padding: 12px; border-radius: 16px; text-align: left; animation: aparecer .3s ease; }
+.feedback.si { background: var(--salvia-bg); } .feedback.no { background: var(--rosa-bg); }
+.teclado .ir { grid-column: span 2; }
+textarea { resize: vertical; line-height: 1.5; }
+.palabra h2 { font-size: 1.35rem; }
