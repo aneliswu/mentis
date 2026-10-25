@@ -104,6 +104,60 @@ addEventListener('hashchange', render);
 const ir = h => { if (location.hash === '#' + h) render(); else location.hash = h; };
 document.addEventListener('click', e => { const a = e.target.closest('a[href^="#"]'); if (a && a.getAttribute('href') === location.hash) { e.preventDefault(); render(); } });
 
+/* ================= Mapa del país (sin internet) ================= */
+let MAPA = null;
+const cargarMapa = () => MAPA ? Promise.resolve(MAPA) : import('./datos_mapa.js').then(m => (MAPA = m));
+let BAND = null;
+const cargarBanderas = () => BAND ? Promise.resolve(BAND) : import('./datos_banderas.js').then(m => (BAND = m.BANDERAS)).catch(() => (BAND = {}));
+function etiquetasMapa(M, vb, pais, inf) {
+  const [vx, vy, w, h] = vb; const fs = w / 42; const puestas = [];
+  const choca = (x, y, txt) => { const a = txt.length * fs * 0.3, b = fs * 0.6; return puestas.some(p => Math.abs(p.x - x) < a + p.a && Math.abs(p.y - y) < b + p.b) ? null : { x, y, a, b }; };
+  const objetivo = { x: inf.x, y: inf.y - fs * 1.1, a: pais.length * fs * 0.33, b: fs * 0.7 }; puestas.push(objetivo);
+  const lista = M.ETIQUETAS.filter(([n, x, y]) => x > vx + fs && x < vx + w - fs && y > vy + fs && y < vy + h - fs && Math.hypot(x - inf.x, y - inf.y) > fs * 1.5)
+    .sort((a, b) => b[3] - a[3]).slice(0, 40);
+  let svg = '';
+  for (const [n, x, y] of lista) {
+    if (puestas.length > 16) break;
+    const c = choca(x, y, n); if (!c) continue; puestas.push(c);
+    svg += `<text x="${x}" y="${y}" class="m-eti" font-size="${(fs * 0.8).toFixed(2)}">${esc(n)}</text>`;
+  }
+  return svg + `<text x="${objetivo.x}" y="${objetivo.y}" class="m-eti fuerte" font-size="${fs.toFixed(2)}">${esc(pais)}</text>`;
+}
+const fmt = n => n.toLocaleString('es-MX');
+function comparaMexico(area) {
+  const r = area / 1964375;
+  if (r >= 1.15) return `unas ${r >= 10 ? Math.round(r) : r.toFixed(1)} veces el tamaño de México`;
+  if (r >= 0.85) return 'casi del mismo tamaño que México';
+  if (area >= 30000) return `como el ${Math.max(1, Math.round(r * 100))} % de México`;
+  const cdmx = area / 1495;
+  return cdmx >= 1.5 ? `como ${Math.round(cdmx)} veces la Ciudad de México` : 'más o menos del tamaño de la Ciudad de México o más pequeño';
+}
+async function pintarMapa(contenedor, pais, capital) {
+  const [M, B] = await Promise.all([cargarMapa(), cargarBanderas()]);
+  const inf = M.INFO[pais]; if (!inf || !contenedor.isConnected) return;
+  let [x0, y0, x1, y1] = inf.bb || [inf.x - 4, inf.y - 4, inf.x + 4, inf.y + 4];
+  const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
+  let h = Math.max((y1 - y0) * 1.9, (x1 - x0) * 1.9 / 2, 45); const w = h * 2;
+  const vbA = [cx - w / 2, cy - h / 2, w, h].map(v => Math.round(v * 10) / 10); const vb = vbA.join(' ');
+  const r = Math.max(w / 120, 1.2);
+  const idiomas = inf.idiomas.length ? inf.idiomas.join(', ').replace(/, ([^,]*)$/, ' y $1') : '';
+  const bandera = B[pais] ? `<img class="bandera" alt="Bandera de ${esc(pais)}" src="data:image/svg+xml;charset=utf-8,${encodeURIComponent(B[pais])}">` : '';
+  contenedor.innerHTML = `<div class="mapa-card">
+    <div class="mapa-cab">${bandera}<div><div class="etiqueta">Bandera y ubicación</div><b>${esc(pais)}</b></div></div>
+    <svg viewBox="${vb}" preserveAspectRatio="xMidYMid slice" role="img" aria-label="Mapa de ${esc(pais)}">
+      <rect x="-1000" y="-1000" width="3000" height="2500" class="m-mar"/>
+      <path d="${M.FONDO}" class="m-fondo"/>
+      ${M.FORMAS[pais] ? `<path d="${M.FORMAS[pais]}" class="m-pais"/>` : ''}
+      <circle cx="${inf.x}" cy="${inf.y}" r="${r * 2.6}" class="m-pulso"/>
+      <circle cx="${inf.x}" cy="${inf.y}" r="${r}" class="m-punto"/>
+      ${etiquetasMapa(M, vbA, pais, inf)}
+    </svg>
+    <div class="mapa-txt"><b>${esc(pais)}</b> está en ${esc(inf.sub)}. Su capital es <b>${esc(capital)}</b>.
+      ${idiomas ? `Se habla ${esc(idiomas)}.` : ''} ${inf.moneda ? `Moneda: ${esc(inf.moneda)}.` : ''}
+      Mide ${fmt(inf.area)} km², ${comparaMexico(inf.area)}${inf.mar ? '' : ', y no tiene salida al mar'}.</div></div>`;
+}
+const datosPais = p => { if (p.materia !== 'geo') return null; if (p.pais) return [p.pais, p.capital]; const [a, b] = (p.nombre || '').split(' – '); return a && b ? [a, b] : null; };
+
 /* ================= Voz: entender la respuesta hablada ================= */
 const ORDINALES = [['primera', 'primero', 'uno', 'la a', 'a'], ['segunda', 'segundo', 'dos', 'la b', 'b', 'be'], ['tercera', 'tercero', 'tres', 'la c', 'c', 'ce'], ['cuarta', 'cuarto', 'cuatro', 'la d', 'd', 'de']];
 function interpretarVoz(p, alts) {
@@ -148,7 +202,7 @@ function correr({ preguntas, titulo, salir, inicio = 0, previo = null, alAvanzar
     const m = MAT[p.materia];
     ej.innerHTML = `
       <div class="puntos">${preguntas.map((_, k) => `<i class="${k < i ? (resultados[k - inicio] === false ? 'mal' : 'ok') : k === i ? 'act' : ''}"></i>`).join('')}</div>
-      <div class="peq suave" style="margin-top:12px">${m ? m.icono + ' ' : ''}${esc(p.categoria || p.nombre || '')}</div>
+      <div class="peq suave" style="margin-top:12px">${m ? m.icono + ' ' : ''}${esc(p.materia === 'geo' ? 'Capitales del mundo' : p.materia === 'len' ? 'Vocabulario' : (p.categoria || p.nombre || ''))}</div>
       <div class="pregunta ${p.enunciado.length > 28 ? 'larga' : ''}">${esc(p.enunciado)}</div>
       ${p.lectura ? `<button class="btn chico sec" id="leer" style="margin:2px auto 8px">🔈 ¿Cómo se lee?</button><div id="lectura" class="lectura" hidden>Se lee: <b>${esc(p.lectura)}</b></div>` : ''}
       <div id="zona"></div>
@@ -221,17 +275,19 @@ function correr({ preguntas, titulo, salir, inicio = 0, previo = null, alAvanzar
       ${p.lectura && !ok ? `<div class="peq">Se lee: ${esc(p.lectura)}</div>` : ''}
       ${detalle && !examen ? `<div class="peq suave" style="margin-top:4px">${detalle}</div>` : ''}
       <div id="porque"></div></div></div>
+      ${datosPais(p) ? '<div id="mapa"></div>' : ''}
       <div class="fila" style="margin-top:10px">${!ok && IA.iaLista() && !examen ? '<button class="btn sec chico" id="explica">💡 Explícamelo</button>' : ''}<button class="btn" id="sig">Siguiente</button></div>`;
     if ($('#explica')) $('#explica').onclick = async e => {
       e.target.disabled = true; $('#porque').innerHTML = '<p class="peq suave">La profe está pensando…</p>';
       try { $('#porque').innerHTML = `<p class="peq">${esc(await IA.explicar(p, resp)).replace(/\n/g, '<br>')}</p>`; } catch (err) { $('#porque').innerHTML = `<p class="peq suave">${esc(err.message)}</p>`; }
     };
+    if (datosPais(p)) pintarMapa($('#mapa'), ...datosPais(p)).then(() => $('#fb')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }));
     $('#fb').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     avisosPendientes();
     alAvanzar?.(i + 1, acum());
     const seguir = () => { i++; if (i >= preguntas.length) { limpiar?.(); limpiar = null; alTerminar(acum()); } else pinta(); };
     $('#sig').onclick = seguir;
-    if (ok && !detalle && p.tipo !== 'texto') setTimeout(() => { if ($('#sig') && preguntas[i] === p) seguir(); }, 800);
+    if (ok && !detalle && p.tipo !== 'texto' && !datosPais(p)) setTimeout(() => { if ($('#sig') && preguntas[i] === p) seguir(); }, 800);
   }
   pinta();
 }
@@ -762,7 +818,9 @@ function jugarConcurso() {
       $('#fb').innerHTML = `<div class="feedback ${ok ? 'si' : 'no'}">${pj('kalipi', ok ? 'celebrar' : 'triste', 52)}<div style="flex:1;text-align:left">
         <b>${ok ? `¡Correcto! +${gan} pts` : resp == null ? '¡Se acabó el tiempo!' : 'Incorrecto'}</b>${!ok ? `<div>Era <b>${esc(p.a)}</b></div>` : ''}
         ${p.explicacion ? `<div class="peq suave">${esc(p.explicacion)}</div>` : ''}</div></div>
+        ${datosPais(p) ? '<div id="mapa"></div>' : ''}
         <button class="btn" id="sig" style="margin-top:10px">${i < 11 ? 'Siguiente' : 'Ver resultado'}</button>`;
+      if (datosPais(p)) pintarMapa($('#mapa'), ...datosPais(p));
       if (ok) flotante(`+${gan}`);
       avisosPendientes();
       $('#sig').onclick = () => { i++; if (i < pregs.length) pinta(); else terminar(); };
@@ -904,7 +962,7 @@ function vistaAjustes() {
     <p class="peq suave">Todo se guarda solo en este dispositivo. Descarga un respaldo de vez en cuando.</p>
     <div class="fila" style="margin-top:10px"><button class="btn chico" id="exp">Descargar respaldo</button><label class="btn chico sec" style="cursor:pointer">Restaurar<input type="file" id="imp" accept=".json,application/json" hidden></label></div>
     <button class="btn chico sec" id="borrar" style="margin-top:14px;color:var(--mal)">Borrar todo mi progreso</button></div>
-  <p class="peq suave" style="text-align:center">MENTIS · versión 0.2.4</p>
+  <p class="peq suave" style="text-align:center">MENTIS · versión 0.2.6</p>
   </div>${nav('perfil')}`;
 
   $('#tema').onclick = e => { const b = e.target.closest('button'); if (!b) return; s.ajustes.tema = b.dataset.v; guardar(); render(); };

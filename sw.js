@@ -1,9 +1,9 @@
 // MENTIS — service worker: la app funciona sin internet
-const VERSION = 'mentis-v0.2.4';
+const VERSION = 'mentis-v0.2.6';
 const ARCHIVOS = [
   './', 'index.html', 'manifest.webmanifest', 'styles.css',
   'app.js', 'store.js', 'engine.js', 'generadores.js', 'ia.js', 'voz.js',
-  'datos_paises.js', 'datos_vocab.js', 'datos_cultura.js',
+  'datos_paises.js', 'datos_vocab.js', 'datos_cultura.js', 'datos_mapa.js', 'datos_banderas.js',
   'fraunces.woff2', 'nunito.woff2',
   'icon-192.png', 'icon-512.png', 'icon-maskable-512.png', 'apple-touch-icon.png',
   ...Array.from({ length: 8 }, (_, i) => `leylapi${i}.png`),

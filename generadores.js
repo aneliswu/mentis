@@ -152,11 +152,11 @@ export function preguntaPais(p, modo) {
   const [pais, cap, cont, , alt = []] = p;
   if (modo === 'inversa') {
     const otros = barajar(PAISES.filter(x => x[2] === cont && x[0] !== pais)).slice(0, 3).map(x => x[0]);
-    return { materia: 'geo', id: idPais(p), nombre: `${pais} – ${cap}`, enunciado: `¿De qué país es capital ${cap}?`, tipo: 'opc', a: pais, opciones: barajar([pais, ...otros]) };
+    return { materia: 'geo', id: idPais(p), nombre: `${pais} – ${cap}`, pais, capital: cap, enunciado: `¿De qué país es capital ${cap}?`, tipo: 'opc', a: pais, opciones: barajar([pais, ...otros]) };
   }
-  if (modo === 'texto') return { materia: 'geo', id: idPais(p), nombre: `${pais} – ${cap}`, enunciado: `Capital de ${pais}`, tipo: 'texto', a: cap, acepta: alt, pista: `Está en ${cont}.` };
+  if (modo === 'texto') return { materia: 'geo', id: idPais(p), nombre: `${pais} – ${cap}`, pais, capital: cap, enunciado: `Capital de ${pais}`, tipo: 'texto', a: cap, acepta: alt, pista: `Está en ${cont}.` };
   const otros = barajar(PAISES.filter(x => x[2] === cont && x[1] !== cap)).slice(0, 3).map(x => x[1]);
-  return { materia: 'geo', id: idPais(p), nombre: `${pais} – ${cap}`, enunciado: `¿Cuál es la capital de ${pais}?`, tipo: 'opc', a: cap, opciones: barajar([cap, ...otros]) };
+  return { materia: 'geo', id: idPais(p), nombre: `${pais} – ${cap}`, pais, capital: cap, enunciado: `¿Cuál es la capital de ${pais}?`, tipo: 'opc', a: cap, opciones: barajar([cap, ...otros]) };
 }
 export function preguntaVocab(w, modo) {
   const [pal, def, ej] = w;

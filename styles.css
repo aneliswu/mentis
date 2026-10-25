@@ -239,3 +239,19 @@ textarea { resize: vertical; line-height: 1.5; }
 .btn.escuchando { background: var(--rosa-bg); color: var(--rosa); animation: latido 1.2s ease-in-out infinite; }
 @keyframes latido { 50% { transform: scale(1.04); } }
 #oiste { margin-top: 6px; min-height: 1em; }
+
+/* ---------- mapa del país ---------- */
+.mapa-card { margin-top: 12px; border-radius: 18px; overflow: hidden; border: 1px solid var(--borde); background: var(--card-solid); text-align: left; animation: aparecer .4s ease; }
+.mapa-card svg { display: block; width: 100%; aspect-ratio: 2 / 1; }
+.m-mar { fill: color-mix(in srgb, var(--lavanda-bg) 70%, var(--card-solid)); }
+.m-fondo { fill: color-mix(in srgb, var(--suave) 22%, var(--card-solid)); stroke: var(--card-solid); stroke-width: .6; vector-effect: non-scaling-stroke; }
+.m-pais { fill: var(--rosa); stroke: #fff; stroke-width: 1; vector-effect: non-scaling-stroke; }
+.m-punto { fill: var(--lavanda); stroke: #fff; stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+.m-pulso { fill: var(--lavanda); opacity: .35; transform-box: fill-box; transform-origin: center; animation: pulso 1.8s ease-out infinite; }
+@keyframes pulso { from { transform: scale(.4); opacity: .55; } to { transform: scale(1.6); opacity: 0; } }
+.mapa-txt { padding: 10px 14px 12px; font-size: .88rem; line-height: 1.5; }
+
+.mapa-cab { display: flex; gap: 12px; align-items: center; padding: 12px 14px; }
+.bandera { width: 64px; height: 48px; object-fit: cover; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,.15); border: 1px solid var(--borde); flex: none; }
+.m-eti { font-family: 'Nunito', sans-serif; font-weight: 700; fill: color-mix(in srgb, var(--texto) 70%, transparent); text-anchor: middle; dominant-baseline: middle; paint-order: stroke; stroke: var(--card-solid); stroke-width: 2.5px; stroke-linejoin: round; vector-effect: non-scaling-stroke; pointer-events: none; }
+.m-eti.fuerte { font-weight: 900; fill: var(--rosa); }
